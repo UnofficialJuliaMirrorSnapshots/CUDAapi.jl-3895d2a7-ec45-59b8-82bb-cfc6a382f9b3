@@ -2,6 +2,8 @@ using CUDAapi
 
 using Test
 
+import Libdl
+
 
 @testset "library types" begin
     @test CUDAapi.PATCH_LEVEL == CUDAapi.libraryPropertyType(2)
@@ -9,8 +11,6 @@ using Test
 end
 
 @testset "properties" begin
-    @test !CUDAapi.gcc_supported(v"5.0", v"5.5")
-    @test CUDAapi.gcc_supported(v"5.0", v"8.0")
     CUDAapi.devices_for_cuda(v"8.0")
     CUDAapi.devices_for_llvm(v"5.0")
     CUDAapi.isas_for_cuda(v"8.0")
@@ -27,8 +27,8 @@ macro test_something(ex)
 end
 
 @testset "discovery" begin
-    find_binary([Sys.iswindows() ? "CHKDSK" : "true"])
-    find_library([Sys.iswindows() ? "NTDLL" : "c"])
+    CUDAapi.find_binary([Sys.iswindows() ? "CHKDSK" : "true"])
+    CUDAapi.find_library([Sys.iswindows() ? "NTDLL" : "c"])
 
     dirs = find_toolkit()
     @test !isempty(dirs)
@@ -41,13 +41,6 @@ end
         @test_something find_cuda_library("nvtx", dirs)
         @test_something find_libdevice([v"3.0"], dirs)
         @test_something find_libcudadevrt(dirs)
-        @test_something find_toolchain(dirs)
-        @test_something find_toolchain(dirs, ver)
-    end
-
-    @testset "host tools and libraries" begin
-        @test_something find_host_compiler()
-        @test_something find_host_compiler(ver)
     end
 
     if haskey(ENV, "CI")
@@ -75,4 +68,16 @@ end
 @testset "availability" begin
     @test isa(has_cuda(), Bool)
     @test isa(has_cuda_gpu(), Bool)
+end
+
+@testset "call" begin
+    # ccall throws if the lib doesn't exist, even if not called
+    foo(x) = (x && ccall((:whatever, "nonexisting"), Cvoid, ()); 42)
+    @test_throws ErrorException foo(false)
+
+    # @runtime_ccall prevents that
+    bar(x) = (x && @runtime_ccall((:whatever, "nonexisting"), Cvoid, ()); 42)
+    @test bar(false) == 42
+    # but should still error nicely if actually calling the library
+    @test_throws ErrorException bar(true)
 end
